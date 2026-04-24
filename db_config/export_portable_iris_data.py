@@ -558,8 +558,9 @@ def _write_csv(
     columns: Sequence[str],
     rows: Iterable[dict[str, Any]],
     column_info: dict[str, ColumnInfo],
+    null_value: str = NULL_SENTINEL,
 ) -> int:
-    """Write rows to a CSV file using a PostgreSQL-compatible NULL sentinel."""
+    """Write rows to a CSV file using the configured NULL representation."""
     count = 0
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -567,7 +568,11 @@ def _write_csv(
         for row in rows:
             writer.writerow(
                 [
-                    _format_csv_value(row.get(column), column_info.get(column))
+                    _format_csv_value(
+                        row.get(column),
+                        column_info.get(column),
+                        null_value=null_value,
+                    )
                     for column in columns
                 ]
             )
@@ -636,24 +641,28 @@ def _write_it_upload_csvs(
         _column_names(table_columns[REGISTRY_TABLE]),
         _iter_registry_rows(conn, table_columns[REGISTRY_TABLE]),
         _column_map(table_columns[REGISTRY_TABLE]),
+        null_value="",
     )
     prompt_count = _write_csv(
         it_dir / PROMPTS_FILE,
         _column_names(prompt_columns),
         prompt_rows,
         _column_map(prompt_columns),
+        null_value="",
     )
     metadata_count = _write_csv(
         it_dir / METADATA_FILE,
         _column_names(table_columns[METADATA_TABLE]),
         _iter_metadata_rows(conn, table_columns[METADATA_TABLE]),
         _column_map(table_columns[METADATA_TABLE]),
+        null_value="",
     )
     chunk_count = _write_csv(
         it_dir / CHUNKS_FILE,
         _column_names(table_columns[CHUNKS_TABLE]),
         _iter_direct_chunk_rows(conn, table_columns[CHUNKS_TABLE]),
         _column_map(table_columns[CHUNKS_TABLE]),
+        null_value="",
     )
     _write_it_upload_readme(
         it_dir / README_FILE,
@@ -866,6 +875,9 @@ If loading all three database tables into an empty/replaced target set:
 `{METADATA_FILE}` includes the source `id` UUIDs. `{CHUNKS_FILE}` includes both
 chunk `id` UUIDs and `document_id` values. Those `document_id` values match the
 metadata `id` values, which is what preserves the link after CSV upload.
+
+Null values are exported as empty CSV fields in this folder, because IT's
+truncate/load process is expected to treat empty fields as SQL NULLs.
 """
     with path.open("w", encoding="utf-8") as handle:
         handle.write(text)
@@ -1333,10 +1345,14 @@ and populate `iris_document_chunks.document_id`.
     print(f"  {path.name}: instructions")
 
 
-def _format_csv_value(value: Any, column_info: ColumnInfo | None) -> str:
+def _format_csv_value(
+    value: Any,
+    column_info: ColumnInfo | None,
+    null_value: str = NULL_SENTINEL,
+) -> str:
     """Format a database value for CSV export."""
     if value is None:
-        return NULL_SENTINEL
+        return null_value
     if column_info and _is_json_column(column_info):
         return _json_text(value)
     if column_info and _is_array_column(column_info):
