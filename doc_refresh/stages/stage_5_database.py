@@ -22,6 +22,7 @@ Functions:
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
@@ -47,6 +48,13 @@ class DatabaseResult:
     sections_inserted: int = 0
     chunks_inserted: int = 0
     errors: List[str] = field(default_factory=list)
+
+
+def _reference_file_name(source_file_name: str) -> str:
+    """Return the filename stored for viewer/S3 references."""
+    if source_file_name.lower().endswith(".docx"):
+        return str(Path(source_file_name).with_suffix(".pdf"))
+    return source_file_name
 
 
 def run_stage(
@@ -324,6 +332,7 @@ def _insert_document_impl(doc: Any, session: Session) -> Tuple[int, int]:
         summary_embedding_str = "[" + ",".join(
             str(x) for x in doc.summary_embedding
         ) + "]"
+    reference_file_name = _reference_file_name(doc.file_info.file_name)
 
     insert_metadata = text(
         f"""
@@ -355,7 +364,7 @@ def _insert_document_impl(doc: Any, session: Session) -> Tuple[int, int]:
             "page_count": doc.page_count,
             "primary_section_count": doc.primary_section_count,
             "subsection_count": doc.subsection_count,
-            "file_name": doc.file_info.file_name,
+            "file_name": reference_file_name,
             "file_path": doc.file_info.relative_path,
             "file_size": doc.file_info.file_size,
             "file_hash": doc.file_info.file_hash,
@@ -414,8 +423,8 @@ def _insert_document_impl(doc: Any, session: Session) -> Tuple[int, int]:
                 "page_number": chunk.page_number,
                 "primary_section_page_count": chunk.primary_section_page_count,
                 "subsection_page_count": chunk.subsection_page_count,
-                "file_name": doc.file_info.file_name,
-                "source_filename": doc.file_info.file_name,
+                "file_name": reference_file_name,
+                "source_filename": reference_file_name,
             },
         )
         chunks_inserted += 1
